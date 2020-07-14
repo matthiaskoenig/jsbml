@@ -5,10 +5,11 @@ import org.sbml.jsbml.SBMLDocument;
 
 import javax.xml.stream.XMLStreamException;
 import java.io.IOException;
+import java.net.URISyntaxException;
 
 public class CompFlatteningExample {
 
-    public static void main(String[] args) throws IOException, XMLStreamException {
+    public static void main(String[] args) throws IOException, XMLStreamException, URISyntaxException {
 
         SBMLDocument doc = JSBML.readSBMLFromFile(
                 "/home/mkoenig/git/jsbml/extensions/comp/src/org/sbml/jsbml/ext/comp/util/submodels_example.xml"
