@@ -43,11 +43,11 @@ import java.util.logging.Logger;
 
 public class CompFlattenTest {
 
-  private final static Logger LOGGER      =
+  private final static Logger LOGGER =
     Logger.getLogger(CompFlatteningConverter.class.getName());
-  private ClassLoader         classLoader = getClass().getClassLoader();
+  private ClassLoader classLoader = getClass().getClassLoader();
 
-  private SBMLDocument        expected, original;
+  private SBMLDocument expected, original;
   
   /**
    * @param pathOriginal
@@ -105,7 +105,7 @@ public class CompFlattenTest {
    * @throws Exception 
    */
   @Test
-  public void testInternaliseExternalModelDefintions_noExternals()
+  public void testInternaliseExternalModelDefinitions_noExternals()
     throws Exception {
     setUpOriginalAndExpected("testGathering/spec_example1.xml", "testGathering/spec_example1.xml");
     SBMLDocument result =
@@ -125,7 +125,7 @@ public class CompFlattenTest {
    * @throws Exception 
    */
   @Test
-  public void testInternaliseExternalModelDefintions_simpleExternal()
+  public void testInternaliseExternalModelDefinitions_simpleExternal()
     throws Exception {
     // spec_example2 references a single external ModelDefinition
     setUpOriginalAndExpected("testGathering/spec_example2.xml",
@@ -144,7 +144,7 @@ public class CompFlattenTest {
    * @throws Exception 
    */
   @Test
-  public void testInternaliseExternalModelDefintions_simpleRefToMainModel()
+  public void testInternaliseExternalModelDefinitions_simpleRefToMainModel()
     throws Exception {
     // spec_example2 references a single external ModelDefinition
     setUpOriginalAndExpected("testGathering/references_main_model.xml",
@@ -164,7 +164,7 @@ public class CompFlattenTest {
    * @throws Exception 
    */
   @Test
-  public void testInternaliseExternalModelDefintions_hasExternalAndLocal()
+  public void testInternaliseExternalModelDefinitions_hasExternalAndLocal()
     throws Exception {
     // spec_example2 references a single external ModelDefinition
     setUpOriginalAndExpected("testGathering/has_external_and_local.xml",
@@ -323,6 +323,20 @@ public class CompFlattenTest {
   }
 
 
+
+  public void testFlatteningExample() {
+    ClassLoader cl = this.getClass().getClassLoader();
+    for (int i = 1; i < 62; i++) {
+      URL urlFile = cl.getResource("testFlattening/" + "test" + i + ".xml");
+      URL urlExpected =
+              cl.getResource("testFlattening/" + "test" + i + "_flat.xml");
+      assert urlFile != null;
+      assert urlExpected != null;
+      runTestOnFiles(urlFile, urlExpected, String.valueOf(i));
+    }
+  }
+
+
   @Test
   public void testSpecificFile() {
     int i = 6;
@@ -336,7 +350,7 @@ public class CompFlattenTest {
   }
 
 
-  private void runTestOnFiles(URL urlFile, URL urlExpected, String name) {
+  public static void runTestOnFiles(URL urlFile, URL urlExpected, String name) {
     try {
       File file = new File(urlFile.toURI());
       File expectedFile = new File(urlExpected.toURI());
