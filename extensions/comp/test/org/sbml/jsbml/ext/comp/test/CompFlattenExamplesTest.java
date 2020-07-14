@@ -26,9 +26,6 @@ import org.junit.runners.Parameterized;
 import org.sbml.jsbml.SBMLDocument;
 import org.sbml.jsbml.SBMLReader;
 import org.sbml.jsbml.SBMLWriter;
-import org.sbml.jsbml.ext.comp.CompConstants;
-import org.sbml.jsbml.ext.comp.CompSBMLDocumentPlugin;
-import org.sbml.jsbml.ext.comp.ModelDefinition;
 import org.sbml.jsbml.ext.comp.util.CompFlatteningConverter;
 
 import javax.xml.stream.XMLStreamException;
@@ -41,19 +38,20 @@ import java.util.Collection;
 import java.util.List;
 import java.util.logging.Logger;
 
-import static org.junit.Assert.*;
 
 @RunWith(Parameterized.class)
-public class CompFlatten2Test {
-
-    private final static Logger LOGGER = Logger.getLogger(CompFlatteningConverter.class.getName());
+public class CompFlattenExamplesTest {
+    private final static Logger LOGGER = Logger.getLogger(CompFlattenExamplesTest.class.getName());
 
     private int flattenTest;
 
-    public CompFlatten2Test(int flattenTest) {
+    public CompFlattenExamplesTest(int flattenTest) {
         this.flattenTest = flattenTest;
     }
 
+    /**
+     * List of all comp flattening test files
+     */
     @Parameterized.Parameters // (name = "testFlattening/test{0}.xml")
     public static Collection<Object[]> flatIntegers() {
         List<Object[]> args = new ArrayList<>();
@@ -71,6 +69,30 @@ public class CompFlatten2Test {
         URL urlExpected = cl.getResource("testFlattening/" + "test" + flattenTest + "_flat.xml");
         assert urlFile != null;
         assert urlExpected != null;
-        CompFlattenTest.runTestOnFiles(urlFile, urlExpected, String.valueOf(flattenTest));
+        runTestOnFiles(urlFile, urlExpected, String.valueOf(flattenTest));
+    }
+
+    private static void runTestOnFiles(URL urlFile, URL urlExpected, String name) {
+        try {
+            File file = new File(urlFile.toURI());
+            File expectedFile = new File(urlExpected.toURI());
+            SBMLReader reader = new SBMLReader();
+            SBMLDocument document = reader.readSBML(file);
+            SBMLDocument expectedDocument = reader.readSBML(expectedFile);
+            CompFlatteningConverter compFlatteningConverter =
+                    new CompFlatteningConverter();
+            SBMLDocument flattenedDocument =
+                    compFlatteningConverter.flatten(document);
+            LOGGER.info("Testing Model " + name + ": ");
+            SBMLWriter.write(flattenedDocument, System.out, ' ', (short) 2);
+            System.out.println("\n-------");
+            Assert.assertTrue("Success Testing Model",
+                    expectedDocument.equals(flattenedDocument));
+        } catch (XMLStreamException | IOException e) {
+            LOGGER.warning("Failed testing Model " + name + ": ");
+            e.printStackTrace();
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
     }
 }
