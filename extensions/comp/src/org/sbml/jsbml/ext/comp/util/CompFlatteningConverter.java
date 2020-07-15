@@ -21,9 +21,7 @@ package org.sbml.jsbml.ext.comp.util;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Logger;
 
 import javax.xml.stream.XMLStreamException;
@@ -79,13 +77,14 @@ public class CompFlatteningConverter {
 
     private final static Logger LOGGER = Logger.getLogger(CompFlatteningConverter.class.getName());
 
-    private List<String> previousModelIDs;
-    private List<String> previousModelMetaIDs;
+    private Model flatModel;
 
-    private ListOf<ModelDefinition> modelDefinitionListOf;
-    private List<Submodel> listOfSubmodelsToFlatten;
+    private Set<String> submodelIdPrefixes;
+    private Set<String> submodelMetaIdPrefixes;
 
-    private Model flattenedModel;
+    private ListOf<ModelDefinition> modelDefinitions;
+    private List<Submodel> submodelsToFlatten;
+
 
     public CompFlatteningConverter() {
         init();
@@ -98,13 +97,13 @@ public class CompFlatteningConverter {
      * variables must be reset.
      */
     private void init() {
-        this.flattenedModel = new Model();
+        this.flatModel = new Model();
 
-        this.modelDefinitionListOf = new ListOf<>();
-        this.listOfSubmodelsToFlatten = new ArrayList<>();
+        this.submodelIdPrefixes = new HashSet<>();
+        this.submodelMetaIdPrefixes = new HashSet<>();
 
-        this.previousModelIDs = new ArrayList<>();
-        this.previousModelMetaIDs = new ArrayList<>();
+        this.modelDefinitions = new ListOf<>();
+        this.submodelsToFlatten = new ArrayList<>();
     }
 
     /**
@@ -125,31 +124,32 @@ public class CompFlatteningConverter {
 
             CompSBMLDocumentPlugin compSBMLDocumentPlugin = (CompSBMLDocumentPlugin) flatDocument.getExtension(CompConstants.shortLabel);
 
-            this.modelDefinitionListOf = compSBMLDocumentPlugin.getListOfModelDefinitions();
+            this.modelDefinitions = compSBMLDocumentPlugin.getListOfModelDefinitions();
 
             if (flatDocument.isSetModel()) {
                 CompModelPlugin compModelPlugin = (CompModelPlugin) flatDocument.getModel().getExtension(CompConstants.shortLabel);
                 if (compModelPlugin != null) {
 
                     // handle the top model
-                    System.out.println("Flattening top model: " + compModelPlugin);
                     Model model = compModelPlugin.getExtendedSBase().getModel();
+                    System.out.println("Flatten top model: " + compModelPlugin);
 
-                    resolvePorts(compModelPlugin);
-                    replaceElementsInModelDefinition(compModelPlugin, null);
+                    // FIXME
+                    // resolvePorts(compModelPlugin);
+                    // replaceElementsInModelDefinition(compModelPlugin, null);
 
-                    this.flattenedModel = mergeModels(flattenModel(model), this.flattenedModel);
-                    System.out.println(this.flattenedModel.toString());
+                    this.flatModel = mergeModels(flattenModel(model), this.flatModel);
+                    System.out.println(this.flatModel);
 
 
-                    // recurvive handling of submodels
-                    this.flattenedModel = flattenSubmodels(compModelPlugin);
+                    // recursively handling of submodels
+                    this.flatModel = flattenSubmodels(compModelPlugin);
 
                     // remove comp extension from model
-                    this.flattenedModel.unsetExtension(CompConstants.shortLabel);
-                    this.flattenedModel.unsetPlugin(CompConstants.shortLabel);
+                    this.flatModel.unsetExtension(CompConstants.shortLabel);
+                    this.flatModel.unsetPlugin(CompConstants.shortLabel);
 
-                    flatDocument.setModel(this.flattenedModel);
+                    flatDocument.setModel(this.flatModel);
                 } else {
                     LOGGER.warning("No comp package set on Model. Cannot flatten.");
                 }
@@ -172,8 +172,9 @@ public class CompFlatteningConverter {
     private Model flattenSubmodels(CompModelPlugin compModelPlugin) {
 
         System.out.println("Flattening submodels for: " + compModelPlugin);
-        resolvePorts(compModelPlugin);
-        replaceElementsInModelDefinition(compModelPlugin, null);
+        // FIXME
+        // resolvePorts(compModelPlugin);
+        // replaceElementsInModelDefinition(compModelPlugin, null);
 
         ListOf<Submodel> subModelListOf = compModelPlugin.getListOfSubmodels().clone();
 
@@ -181,10 +182,10 @@ public class CompFlatteningConverter {
             LOGGER.info("No submodels for comp model:" + compModelPlugin);
         } else {
             for (Submodel submodel : subModelListOf) {
+                System.out.println("Flatten submodel: " + submodel.getId());
+                this.submodelsToFlatten.add(submodel);
 
-                this.listOfSubmodelsToFlatten.add(submodel);
-
-                ModelDefinition modelDefinition = this.modelDefinitionListOf.get(submodel.getModelRef());
+                ModelDefinition modelDefinition = this.modelDefinitions.get(submodel.getModelRef());
                 if (modelDefinition != null) {
                     if (modelDefinition.getExtension(CompConstants.shortLabel) != null) {
                         flattenSubmodels((CompModelPlugin) modelDefinition.getExtension(CompConstants.shortLabel));
@@ -195,7 +196,7 @@ public class CompFlatteningConverter {
             }
         }
 
-        return flattenAndMergeSubModels(this.listOfSubmodelsToFlatten);
+        return flattenAndMergeSubmodels(this.submodelsToFlatten);
     }
 
     /**
@@ -311,7 +312,7 @@ public class CompFlatteningConverter {
 
             for (ReplacedElement replacedElement : listOfReplacedElements) {
 
-                for (ModelDefinition modelDefinition : this.modelDefinitionListOf) {
+                for (ModelDefinition modelDefinition : this.modelDefinitions) {
                     SBase sBase = modelDefinition.findNamedSBase(replacedElement.getIdRef());
                     if (sBase != null) {
                         sBase.removeFromParent();
@@ -332,26 +333,22 @@ public class CompFlatteningConverter {
     }
 
 
-    private Model flattenAndMergeSubModels(List<Submodel> listOfSubmodels) {
+    /**
+     * Flatten and merge submodels
+     * @param submodels
+     * @return
+     */
+    private Model flattenAndMergeSubmodels(List<Submodel> submodels) {
 
-        int size = listOfSubmodels.size();
-        if (size >= 2) {
-            Submodel last = listOfSubmodels.get(size - 1);
-            Submodel secondLast = listOfSubmodels.get(size - 2);
-
-            this.flattenedModel = mergeModels(this.flattenedModel, mergeModels(flattenSubModel(secondLast), flattenSubModel(last)));
-            listOfSubmodels.remove(secondLast);
-            listOfSubmodels.remove(last);
-
-            flattenAndMergeSubModels(listOfSubmodels);
-
-        } else if (size == 1) {
-            Submodel last = listOfSubmodels.get(size - 1);
-
-            this.flattenedModel = mergeModels(this.flattenedModel, flattenSubModel(last));
+        int size = submodels.size();
+        while (size > 0) {
+            Submodel lastSubmodel = submodels.get(size - 1);
+            this.flatModel = mergeModels(this.flatModel, flattenSubModel(lastSubmodel));
+            submodels.remove(size - 1);
+            size--;
         }
 
-        return this.flattenedModel;
+        return this.flatModel;
     }
 
     /**
@@ -457,11 +454,18 @@ public class CompFlatteningConverter {
         ListOf<Parameter> parameterListOf = sourceModel.getListOfParameters().clone();
         sourceModel.getListOfParameters().removeFromParent();
 
+//        System.out.print("\ntargetModel: " + targetModel);
+//        for (Parameter p :targetModel.getListOfParameters()){
+//            System.out.print("\t" + p + "; ");
+//        }
+//        System.out.println();
+
         for (Parameter parameter : parameterListOf) {
             if (parameter.isSetPlugin(CompConstants.shortLabel)) {
                 replaceElementsInModelDefinition(null, (CompSBasePlugin) parameter.getExtension(CompConstants.shortLabel));
                 parameter.unsetPlugin(CompConstants.shortLabel);
             }
+//            System.out.println("add: " + parameter);
             targetModel.addParameter(parameter.clone());
         }
 
@@ -503,100 +507,95 @@ public class CompFlatteningConverter {
      */
     private Model flattenSubModel(Submodel subModel) {
 
-        Model model = new Model();
-
-        // 2
+        // 2.
         // Let 'M' be the identifier of a given submodel.
-        String subModelID = subModel.getId() + "_";
-        String subModelMetaID = subModel.getMetaId() + "_";
-
+        //
         // Verify that no object identifier or meta identifier of objects in that submodel
         // (i.e., the id or metaid attribute values)
         // begin with the character sequence "M__";
-
+        //
         // if there is an existing identifier or meta identifier beginning with "M__",
         // add an underscore to "M__" (i.e., to produce "M___") and again check that the sequence is unique.
         // Continue adding underscores until you find a unique prefix. Let "P" stand for this final prefix.
 
-        while (this.previousModelIDs.contains(subModelID)) {
-            subModelID += "_";
-        }
+        String submodelIdPrefix = subModel.getId() + "__";
+        String submodelMetaIdPrefix = subModel.getMetaId() + "__";
 
-        while (this.previousModelMetaIDs.contains(subModelMetaID)) {
-            subModelMetaID += "_";
+        while (this.submodelIdPrefixes.contains(submodelIdPrefix)) {
+            submodelIdPrefix += "_";
         }
+        this.submodelIdPrefixes.add(submodelIdPrefix);
 
-        if (!this.previousModelIDs.isEmpty()) { // because libSBML does it
-            subModelID = this.previousModelIDs.get(this.previousModelIDs.size() - 1) + subModelID;
+        while (this.submodelMetaIdPrefixes.contains(submodelMetaIdPrefix)) {
+            submodelMetaIdPrefix += "_";
         }
+        this.submodelMetaIdPrefixes.add(submodelIdPrefix);
 
-        this.previousModelIDs.add(subModelID);
-        this.previousModelMetaIDs.add(subModelID);
 
         //subModel.setId(subModelID);
         //subModel.setMetaId(subModelMetaID);
 
-        if (subModel.getModelRef() != null) {
+        // 3
+        // Remove all objects that have been replaced or deleted in the submodel.
 
-            // initiate a clone of the referenced model
-            Model modelOfSubmodel = this.modelDefinitionListOf.get(subModel.getModelRef()).clone();
+        // initiate a clone of the referenced model
+        Model model = this.modelDefinitions.get(subModel.getModelRef()).clone();
 
-            // 3
-            // Remove all objects that have been replaced or deleted in the submodel.
-
-
-            // Remove all objects that have been deleted in the submodel
-            for (Deletion deletion : subModel.getListOfDeletions()) {
-
-                // TODO: search for element to remove in all model definitions?
-                this.modelDefinitionListOf.remove(deletion.getMetaIdRef());
-
-                subModel.removeDeletion(deletion);
-
-                //deletion.removeFromParent();
-                //for (ModelDefinition modelDefinition : this.modelDefinitionListOf){
-                //    modelDefinition.remove(deletion.getMetaIdRef());
-                //}
-                // modelOfSubmodel.remove(deletion.getMetaIdRef());
-
-            }
-            subModel.getListOfDeletions().removeFromParent();
-
-            // TODO: Replace Objects
-
-            // 4
-            // Transform the remaining objects in the submodel as follows:
-            // a)
-            // Change every identifier (id attribute)
-            // to a new value obtained by prepending "P" to the original identifier.
-            // b)
-            // Change every meta identifier (metaid attribute)
-            // to a new value obtained by prepending "P" to the original identifier.
-
-            model = flattenModel(modelOfSubmodel);
-
-            // 5
-            // Transform every SIdRef and IDREF type value in the remaining objects of the submodel as follows:
-            // a)
-            // If the referenced object has been replaced by the application of a ReplacedBy or ReplacedElement construct,
-            // change the SIdRef value (respectively, IDREF value) to the SId value (respectively, ID value)
-            // of the object replacing it.
-            // b)
-            // If the referenced object has not been replaced, change the SIdRef and IDREF value by prepending "P"
-            // to the original value.
-
-            // 6
-            // After performing the tasks above for all remaining objects, merge the objects of the remaining submodels
-            // into a single model.
-            // Merge the various lists (list of species, list of compartments, etc.)
-            // in this step, and preserve notes and annotations as well as constructs from other SBML Level 3 packages.
-
-            //model = modelOfSubmodel;
-            //model = mergeModels(this.previousModel, modelOfSubmodel); // initiate model (?)
-
+        // Remove all objects that have been deleted in the submodel
+        for (Deletion deletion : subModel.getListOfDeletions()) {
+            SBase sbase = getSBaseFromSBaseRef(deletion);
+            removeSBaseFromModel(sbase, model);
+            subModel.removeDeletion(deletion);
         }
+        subModel.getListOfDeletions().removeFromParent();
+
+        // Remove all objects that have been replaced
+
+        // 4
+        // Transform the remaining objects in the submodel as follows:
+        // a)
+        // Change every identifier (id attribute)
+        // to a new value obtained by prepending "P" to the original identifier.
+        // b)
+        // Change every meta identifier (metaid attribute)
+        // to a new value obtained by prepending "P" to the original identifier.
+
+        model = flattenModel(model);
+
+        // 5
+        // Transform every SIdRef and IDREF type value in the remaining objects of the submodel as follows:
+        // a)
+        // If the referenced object has been replaced by the application of a ReplacedBy or ReplacedElement construct,
+        // change the SIdRef value (respectively, IDREF value) to the SId value (respectively, ID value)
+        // of the object replacing it.
+        // b)
+        // If the referenced object has not been replaced, change the SIdRef and IDREF value by prepending "P"
+        // to the original value.
+
+        // 6
+        // After performing the tasks above for all remaining objects, merge the objects of the remaining submodels
+        // into a single model.
+        // Merge the various lists (list of species, list of compartments, etc.)
+        // in this step, and preserve notes and annotations as well as constructs from other SBML Level 3 packages.
+
+        //model = modelOfSubmodel;
+        //model = mergeModels(this.previousModel, modelOfSubmodel); // initiate model (?)
 
         return model;
+    }
+
+    private void removeSBaseFromModel(SBase sbase, Model model){
+        Class cls = sbase.getClass();
+        if (cls == Species.class){
+            model.removeSpecies((Species) sbase);
+        } else if (cls == Parameter.class){
+            model.removeParameter((Parameter) sbase);
+        } else if (cls == Reaction.class){
+            model.removeReaction((Reaction) sbase);
+        } else if (cls == Rule.class){
+            model.removeRule((Rule) sbase);
+        }
+        // FIXME: complete list of possible deletions
     }
 
     private Model flattenModel(Model model) {
@@ -627,6 +626,7 @@ public class CompFlatteningConverter {
 
         for (SBase sBase : list) {
 
+            /*
             if (!sBase.getId().equals("")) {
                 sBase.setId(modelOfSubmodel.getId() + sBase.getId());
             }
@@ -634,6 +634,7 @@ public class CompFlatteningConverter {
             if (!sBase.getMetaId().equals("")) {
                 sBase.setMetaId(modelOfSubmodel.getId() + sBase.getMetaId());
             }
+             */
 
             if (sBase.isPackageEnabled(CompConstants.shortLabel)) {
                 CompSBasePlugin compSBasePlugin = (CompSBasePlugin) sBase.getExtension(CompConstants.shortLabel);

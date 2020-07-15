@@ -37,7 +37,7 @@ public class CompFlatteningExample {
         System.out.println("---------------------------------------------------");
         System.out.println(JSBML.writeSBMLToString(flatDoc));
         System.out.println("---------------------------------------------------");
-        
+
     }
 
 }
