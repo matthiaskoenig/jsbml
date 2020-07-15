@@ -85,9 +85,11 @@ public class CompFlattenExamplesTest {
                     compFlatteningConverter.flatten(document);
             LOGGER.info("Testing Model " + name + ": ");
             System.out.println("\n-------");
-            SBMLWriter.write(expectedDocument, System.out, ' ', (short) 2);
+            SBMLWriter.write(document, System.out, ' ', (short) 2);
             System.out.println("\n-------");
             SBMLWriter.write(flatDocument, System.out, ' ', (short) 2);
+            System.out.println("\n-------");
+            SBMLWriter.write(expectedDocument, System.out, ' ', (short) 2);
             System.out.println("\n-------");
             Assert.assertTrue("Success Testing Model",
                     expectedDocument.equals(flatDocument));
