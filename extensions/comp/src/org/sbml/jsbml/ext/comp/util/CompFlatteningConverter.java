@@ -70,6 +70,10 @@ import org.sbml.jsbml.ext.comp.*;
  * into a single model. Merge the various lists (list of species, list of compartments, etc.) in this step,
  * and preserve notes and annotations as well as constructs from other SBML Level 3 packages.
  *
+ * Open issues:
+ * - FIXME: conversionFactors are not handled (e.g. on ReplacedElement)
+ * - FIXME: replacedBy not handled
+ *
  * @author Christoph Blessing, Matthias König
  * @since 1.0
  */
@@ -134,9 +138,7 @@ public class CompFlatteningConverter {
                     Model model = compModelPlugin.getExtendedSBase().getModel();
                     System.out.println("Flatten top model: " + compModelPlugin);
 
-                    // FIXME
-                    // resolvePorts(compModelPlugin);
-                    // replaceElementsInModelDefinition(compModelPlugin, null);
+                    resolvePorts(compModelPlugin);
 
                     // no prefix for top model
                     this.flatModel = mergeModels(flattenModel(model, "", ""), this.flatModel);
@@ -173,8 +175,8 @@ public class CompFlatteningConverter {
     private Model flattenSubmodels(CompModelPlugin compModelPlugin) {
 
         System.out.println("Flattening submodels for: " + compModelPlugin);
-        // FIXME
-        // resolvePorts(compModelPlugin);
+
+        resolvePorts(compModelPlugin);
         // replaceElementsInModelDefinition(compModelPlugin, null);
 
         ListOf<Submodel> subModelListOf = compModelPlugin.getListOfSubmodels().clone();
@@ -224,7 +226,7 @@ public class CompFlatteningConverter {
             Model model = port.getModel();
 
             // Port object instance defines a port for a component in a model.
-            SBase sBase = getSBaseFromSBaseRef(port);
+            SBase sBase = getSBaseFromSBaseRef(port, null);
             // The reference object is added to the model
             moveSBaseToModel(model, sBase);
         }
@@ -248,17 +250,29 @@ public class CompFlatteningConverter {
      * @param sBaseRef
      * @return
      */
-    private SBase getSBaseFromSBaseRef(SBaseRef sBaseRef){
+    private SBase getSBaseFromSBaseRef(SBaseRef sBaseRef, Model model){
         SBase sBase = null;
-        Model model = sBaseRef.getParent().getModel();
+        if (model == null) {
+            // model is model of the sBaseRef
+            model = sBaseRef.getParent().getModel();
+        }
         if (sBaseRef.isSetMetaIdRef()){
             sBase = model.getElementByMetaId(sBaseRef.getMetaIdRef());
         } else if (sBaseRef.isSetIdRef()){
             sBase = model.getElementBySId(sBaseRef.getIdRef());
         } else if (sBaseRef.isSetUnitRef()){
             sBase = model.getUnitDefinition(sBaseRef.getUnitRef());
+        } else if (sBaseRef.isSetPortRef()){
+            String portRef = sBaseRef.getPortRef();
+            CompModelPlugin compModelPlugin = (CompModelPlugin) model.getExtension(CompConstants.shortLabel);
+            Port port = compModelPlugin.getPort(portRef);
+            sBase = getSBaseFromSBaseRef(port, model);
         }
 
+
+        if (sBase == null){
+            LOGGER.warning("SBaseRef could not be resolved:" + sBaseRef);
+        }
         // Not sure if necessary:
         // String unitRef = sBaseRef.getUnitRef();
         // SBaseRef sbaseRef = sBaseRef.getSBaseRef();
@@ -305,41 +319,20 @@ public class CompFlatteningConverter {
      * instances are here actually removed, along with their respective {@link Port}, and thus replaced by the holder
      * of the {@link ReplacedElement}
      *
-     * @param compModelPlugin plugin holding the {@link ReplacedElement}s, may be null -- not used in that case
-     * @param compSBasePlugin plugin holding {@link ReplacedElement}s, may be null - not used in that case
+     * @param compSBasePlugin plugin holding the {@link ReplacedElement}s
      */
-    private void replaceElementsInModelDefinition(CompModelPlugin compModelPlugin, CompSBasePlugin compSBasePlugin) {
+    private void deleteReplacedElements(CompSBasePlugin compSBasePlugin, CompModelPlugin compModelPlugin) {
+        if (compSBasePlugin != null) {
+            for (ReplacedElement replacedElement : compSBasePlugin.getListOfReplacedElements()) {
 
-        if (compModelPlugin != null || compSBasePlugin != null) {
-
-            ListOf<ReplacedElement> listOfReplacedElements = new ListOf<>();
-
-            if (compModelPlugin != null) {
-                listOfReplacedElements = compModelPlugin.getListOfReplacedElements();
-            } else if (compSBasePlugin != null) {
-                listOfReplacedElements = compSBasePlugin.getListOfReplacedElements();
+                String submodelRef = replacedElement.getSubmodelRef();
+                Submodel submodel = compModelPlugin.getSubmodel(submodelRef);
+                ModelDefinition modelDefinition = this.modelDefinitions.get(submodel.getModelRef());
+                SBase sBase = getSBaseFromSBaseRef(replacedElement, modelDefinition);
+                sBase.removeFromParent();
             }
-
-            for (ReplacedElement replacedElement : listOfReplacedElements) {
-
-                for (ModelDefinition modelDefinition : this.modelDefinitions) {
-                    SBase sBase = modelDefinition.findNamedSBase(replacedElement.getIdRef());
-                    if (sBase != null) {
-                        sBase.removeFromParent();
-                    }
-                }
-
-                if (compModelPlugin != null) {
-                    for (Port port : compModelPlugin.getListOfPorts()) {
-                        if (port.getId().equals(replacedElement.getPortRef())) {
-                            port.removeFromParent();
-                        }
-
-                    }
-                }
-            }
-
         }
+
     }
 
 
@@ -446,18 +439,10 @@ public class CompFlatteningConverter {
         ListOf<Parameter> parameterListOf = sourceModel.getListOfParameters().clone();
         sourceModel.getListOfParameters().removeFromParent();
 
-//        System.out.print("\ntargetModel: " + targetModel);
-//        for (Parameter p :targetModel.getListOfParameters()){
-//            System.out.print("\t" + p + "; ");
-//        }
-//        System.out.println();
-
         for (Parameter parameter : parameterListOf) {
             if (parameter.isSetPlugin(CompConstants.shortLabel)) {
-                replaceElementsInModelDefinition(null, (CompSBasePlugin) parameter.getExtension(CompConstants.shortLabel));
                 parameter.unsetPlugin(CompConstants.shortLabel);
             }
-//            System.out.println("add: " + parameter);
             targetModel.addParameter(parameter.clone());
         }
 
@@ -535,7 +520,7 @@ public class CompFlatteningConverter {
 
         // Remove all objects that have been deleted in the submodel
         for (Deletion deletion : subModel.getListOfDeletions()) {
-            SBase sbase = getSBaseFromSBaseRef(deletion);
+            SBase sbase = getSBaseFromSBaseRef(deletion, null);
             removeSBaseFromModel(sbase, model);
             subModel.removeDeletion(deletion);
         }
@@ -564,7 +549,7 @@ public class CompFlatteningConverter {
         // If the referenced object has not been replaced, change the SIdRef and IDREF value by prepending "P"
         // to the original value.
 
-
+        // TODO: change all the remaining idrefs or SIdrefs
 
         // 6
         // After performing the tasks above for all remaining objects, merge the objects of the remaining submodels
@@ -572,8 +557,6 @@ public class CompFlatteningConverter {
         // Merge the various lists (list of species, list of compartments, etc.)
         // in this step, and preserve notes and annotations as well as constructs from other SBML Level 3 packages.
 
-        //model = modelOfSubmodel;
-        //model = mergeModels(this.previousModel, modelOfSubmodel); // initiate model (?)
 
         return model;
     }
@@ -632,8 +615,8 @@ public class CompFlatteningConverter {
                 CompSBasePlugin compSBasePlugin = (CompSBasePlugin) sBase.getExtension(CompConstants.shortLabel);
                 CompModelPlugin compModelPlugin = (CompModelPlugin) modelOfSubmodel.getExtension(CompConstants.shortLabel);
 
-                // resolve replacements
-                replaceElementsInModelDefinition(compModelPlugin, compSBasePlugin);
+                // resolve replacedElements
+                deleteReplacedElements(compSBasePlugin, compModelPlugin);
             }
             //sBase.unsetPlugin(CompConstants.shortLabel);
         }
